@@ -1,9 +1,19 @@
 import express from "express";
 import Booking from "../models/Booking.js";
 import { protect, adminOnly } from "../middleware/authMiddleware.js";
-
+import BusinessSettings from "../models/BusinessSettings.js";
+import { sendEmail } from "../utils/sendEmail.js";
+import {
+  bookingCreatedEmail,
+  bookingStatusEmail,
+} from "../utils/emailTemplates.js";
 
 const router = express.Router();
+const getBusinessName = async () => {
+  const settings = await BusinessSettings.findOne({ settingsKey: "main" });
+
+  return settings?.businessName || "BookFlow";
+};
 
 // GET all bookings
 router.get("/", async (req, res) => {
@@ -24,6 +34,7 @@ router.get("/", async (req, res) => {
 });
 
 // CREATE booking
+// CREATE booking
 router.post("/", async (req, res) => {
   try {
     const { customerName, email, phone, service, date, time, notes } = req.body;
@@ -34,15 +45,41 @@ router.post("/", async (req, res) => {
         message: "Please provide all required booking fields.",
       });
     }
+const existingBooking = await Booking.findOne({
+  date,
+  time,
+  status: {
+    $in: ["Pending", "Confirmed"],
+  },
+});
 
-    const booking = await Booking.create({
-      customerName,
-      email,
-      phone,
-      service,
-      date,
-      time,
-      notes,
+if (existingBooking) {
+  return res.status(409).json({
+    success: false,
+    message:
+      "That date and time is already booked. Please choose another time.",
+  });
+}
+
+const booking = await Booking.create({
+  customerName,
+  email,
+  phone,
+  service,
+  date,
+  time,
+  notes,
+});
+
+    const businessName = await getBusinessName();
+
+    await sendEmail({
+      to: booking.email,
+      subject: `Booking request received - ${businessName}`,
+      html: bookingCreatedEmail({
+        booking,
+        businessName,
+      }),
     });
 
     res.status(201).json({
@@ -59,7 +96,9 @@ router.post("/", async (req, res) => {
   }
 });
 
+
 // UPDATE booking status
+// UPDATE booking status - admin only
 router.patch("/:id/status", protect, adminOnly, async (req, res) => {
   try {
     const { status } = req.body;
@@ -86,6 +125,19 @@ router.patch("/:id/status", protect, adminOnly, async (req, res) => {
       });
     }
 
+    const businessName = await getBusinessName();
+
+    if (status === "Confirmed" || status === "Declined") {
+      await sendEmail({
+        to: booking.email,
+        subject: `Booking ${status.toLowerCase()} - ${businessName}`,
+        html: bookingStatusEmail({
+          booking,
+          businessName,
+        }),
+      });
+    }
+
     res.json({
       success: true,
       message: "Booking status updated.",
@@ -99,6 +151,7 @@ router.patch("/:id/status", protect, adminOnly, async (req, res) => {
     });
   }
 });
+
 
 // CUSTOMER CANCEL booking
 router.patch("/:id/cancel", async (req, res) => {
@@ -115,6 +168,17 @@ router.patch("/:id/cancel", async (req, res) => {
         message: "Booking not found.",
       });
     }
+
+    const businessName = await getBusinessName();
+
+    await sendEmail({
+      to: booking.email,
+      subject: `Booking cancelled - ${businessName}`,
+      html: bookingStatusEmail({
+        booking,
+        businessName,
+      }),
+    });
 
     res.json({
       success: true,
