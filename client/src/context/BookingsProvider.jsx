@@ -1,148 +1,174 @@
 import { useEffect, useState } from "react";
-import { BookingsContext } from "./bookingsContext";
 import api from "../api/api";
+import { BookingsContext } from "./bookingsContext";
 
-function normalizeBooking(booking) {
+const normalizeBooking = (booking) => {
   return {
     ...booking,
     id: booking._id || booking.id,
   };
-}
+};
 
-function BookingsProvider({ children }) {
+export default function BookingsProvider({ children }) {
   const [bookings, setBookings] = useState([]);
   const [bookingsLoading, setBookingsLoading] = useState(true);
   const [bookingsError, setBookingsError] = useState("");
 
   useEffect(() => {
-    const fetchBookings = async () => {
-      try {
-        setBookingsLoading(true);
+    let isMounted = true;
 
+    const loadInitialBookings = async () => {
+      try {
         const { data } = await api.get("/bookings");
 
-        const normalizedBookings = data.bookings.map(normalizeBooking);
+        if (!isMounted) return;
+
+        const normalizedBookings = (data.bookings || []).map(normalizeBooking);
 
         setBookings(normalizedBookings);
         setBookingsError("");
-      } catch (error) {
-        console.error("Fetch bookings error:", error);
-        setBookingsError("Could not load bookings from the server.");
+      } catch (err) {
+        if (!isMounted) return;
+
+        console.error("Fetch bookings error:", err);
+        setBookingsError(
+          err.response?.data?.message || "Failed to load bookings.",
+        );
       } finally {
-        setBookingsLoading(false);
+        if (isMounted) {
+          setBookingsLoading(false);
+        }
       }
     };
 
-    fetchBookings();
+    loadInitialBookings();
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
-  const addBooking = async (bookingData) => {
-    try {
-      const payload = {
-        customerName: bookingData.name,
-        email: bookingData.email,
-        phone: bookingData.phone,
-        service: bookingData.service,
-        date: bookingData.date,
-        time: bookingData.time,
-        notes: bookingData.notes,
-      };
+ const fetchBookings = async () => {
+   try {
+     setBookingsLoading(true);
+     setBookingsError("");
 
-      const { data } = await api.post("/bookings", payload);
+     const { data } = await api.get("/bookings");
 
-      const newBooking = normalizeBooking(data.booking);
+     const normalizedBookings = (data.bookings || []).map(normalizeBooking);
 
-      setBookings((prevBookings) => [newBooking, ...prevBookings]);
+     setBookings(normalizedBookings);
 
-      return {
-        success: true,
-        booking: newBooking,
-      };
-    } catch (error) {
-      console.error("Create booking error:", error);
+     return normalizedBookings;
+   } catch (err) {
+     console.error("Fetch bookings error:", err);
 
-      return {
-        success: false,
-        message:
-          error.response?.data?.message || "Could not submit booking request.",
-      };
-    }
-  };
+     const message = err.response?.data?.message || "Failed to load bookings.";
 
-  const updateBookingStatus = async (bookingId, newStatus) => {
+     setBookingsError(message);
+
+     throw new Error(message, { cause: err });
+   } finally {
+     setBookingsLoading(false);
+   }
+ };
+
+ const addBooking = async (bookingData) => {
+   try {
+     const { data } = await api.post("/bookings", bookingData);
+
+     const newBooking = normalizeBooking(data.booking);
+
+     setBookings((prev) => [newBooking, ...prev]);
+
+     return newBooking;
+   } catch (err) {
+     console.error("Add booking error:", err);
+
+     const message = err.response?.data?.message || "Failed to create booking.";
+
+     throw new Error(message, { cause: err });
+   }
+ };
+  const updateBookingStatus = async (bookingId, status) => {
     try {
       const endpoint =
-        newStatus === "Cancelled"
+        status === "Cancelled"
           ? `/bookings/${bookingId}/cancel`
           : `/bookings/${bookingId}/status`;
 
-      const payload =
-        newStatus === "Cancelled"
-          ? {}
-          : {
-              status: newStatus,
-            };
+      const payload = status === "Cancelled" ? {} : { status };
 
-      const { data } =
-        newStatus === "Cancelled"
-          ? await api.patch(endpoint)
-          : await api.patch(endpoint, payload);
+      const { data } = await api.patch(endpoint, payload);
 
       const updatedBooking = normalizeBooking(data.booking);
 
-      setBookings((prevBookings) =>
-        prevBookings.map((booking) =>
+      setBookings((prev) =>
+        prev.map((booking) =>
           booking.id === bookingId ? updatedBooking : booking,
         ),
       );
 
-      return {
-        success: true,
-      };
-    } catch (error) {
-      console.error("Update booking status error:", error);
+      return updatedBooking;
+    } catch (err) {
+      console.error("Update booking status error:", err);
 
-      return {
-        success: false,
-        message:
-          error.response?.data?.message || "Could not update booking status.",
-      };
+      const message =
+        err.response?.data?.message || "Failed to update booking status.";
+
+      throw new Error(message, { cause: err });
     }
   };
 
-  const deleteBooking = async (bookingId) => {
+  const updateBooking = async (bookingId, bookingData) => {
     try {
-      await api.delete(`/bookings/${bookingId}`);
+      const { data } = await api.patch(`/bookings/${bookingId}`, bookingData);
 
-      setBookings((prevBookings) =>
-        prevBookings.filter((booking) => booking.id !== bookingId),
+      const updatedBooking = normalizeBooking(data.booking);
+
+      setBookings((prev) =>
+        prev.map((booking) =>
+          booking.id === bookingId ? updatedBooking : booking,
+        ),
       );
 
-      return {
-        success: true,
-      };
-    } catch (error) {
-      console.error("Delete booking error:", error);
+      return updatedBooking;
+    } catch (err) {
+      console.error("Update booking error:", err);
 
-      return {
-        success: false,
-        message: error.response?.data?.message || "Could not delete booking.",
-      };
+      const message =
+        err.response?.data?.message || "Failed to update booking.";
+
+      throw new Error(message, { cause: err });
     }
   };
+ const deleteBooking = async (bookingId) => {
+   try {
+     await api.delete(`/bookings/${bookingId}`);
 
-  const clearBookings = () => {
-    setBookings([]);
-  };
+     setBookings((prev) => prev.filter((booking) => booking.id !== bookingId));
+   } catch (err) {
+     console.error("Delete booking error:", err);
 
+     const message = err.response?.data?.message || "Failed to delete booking.";
+
+     throw new Error(message, { cause: err });
+   }
+ };
   const value = {
     bookings,
     bookingsLoading,
     bookingsError,
+
+    // keep these aliases so older pages still work
+    loading: bookingsLoading,
+    error: bookingsError,
+
+    fetchBookings,
     addBooking,
+    updateBooking,
     updateBookingStatus,
     deleteBooking,
-    clearBookings,
   };
 
   return (
@@ -151,5 +177,3 @@ function BookingsProvider({ children }) {
     </BookingsContext.Provider>
   );
 }
-
-export default BookingsProvider;

@@ -194,6 +194,90 @@ router.patch("/:id/cancel", async (req, res) => {
   }
 });
 
+// UPDATE full booking - admin only
+router.patch("/:id", protect, adminOnly, async (req, res) => {
+  try {
+    const {
+      customerName,
+      email,
+      phone,
+      service,
+      date,
+      time,
+      status,
+      notes,
+    } = req.body;
+
+    const allowedStatuses = ["Pending", "Confirmed", "Declined", "Cancelled"];
+
+    if (status && !allowedStatuses.includes(status)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid booking status.",
+      });
+    }
+
+    const currentBooking = await Booking.findById(req.params.id);
+
+    if (!currentBooking) {
+      return res.status(404).json({
+        success: false,
+        message: "Booking not found.",
+      });
+    }
+
+    const newDate = date || currentBooking.date;
+    const newTime = time || currentBooking.time;
+
+    const existingBooking = await Booking.findOne({
+      _id: { $ne: req.params.id },
+      date: newDate,
+      time: newTime,
+      status: {
+        $in: ["Pending", "Confirmed"],
+      },
+    });
+
+    if (existingBooking) {
+      return res.status(409).json({
+        success: false,
+        message:
+          "That date and time is already booked. Please choose another time.",
+      });
+    }
+
+    const updatedBooking = await Booking.findByIdAndUpdate(
+      req.params.id,
+      {
+        customerName,
+        email,
+        phone,
+        service,
+        date,
+        time,
+        status,
+        notes,
+      },
+      {
+        new: true,
+        runValidators: true,
+      }
+    );
+
+    res.json({
+      success: true,
+      message: "Booking updated successfully.",
+      booking: updatedBooking,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Failed to update booking.",
+      error: error.message,
+    });
+  }
+});
+
 // DELETE booking
 router.delete("/:id", protect, adminOnly, async (req, res) => {
   try {
