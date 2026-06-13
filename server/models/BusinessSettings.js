@@ -7,41 +7,60 @@ const businessSettingsSchema = new mongoose.Schema(
       default: "main",
       unique: true,
     },
+
     businessName: {
       type: String,
-      required: true,
-      trim: true,
+      default: "BookFlow",
     },
+
     tagline: {
       type: String,
-      required: true,
-      trim: true,
+      default: "Simple booking for modern businesses.",
     },
+
     phone: {
       type: String,
-      required: true,
-      trim: true,
+      default: "",
     },
+
     email: {
       type: String,
-      required: true,
-      trim: true,
-      lowercase: true,
+      default: "",
     },
+
     address: {
       type: String,
-      required: true,
-      trim: true,
+      default: "",
+    },
+
+    openingTime: {
+      type: String,
+      default: "09:00",
+    },
+
+    closingTime: {
+      type: String,
+      default: "17:00",
+    },
+
+    slotInterval: {
+      type: Number,
+      default: 30,
+    },
+
+    closedDays: {
+      type: [String],
+      default: ["Sunday"],
     },
   },
   {
     timestamps: true,
-  }
+  },
 );
 
 const BusinessSettings = mongoose.model(
   "BusinessSettings",
-  businessSettingsSchema
+  businessSettingsSchema,
 );
 
 export default BusinessSettings;

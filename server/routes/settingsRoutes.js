@@ -1,25 +1,50 @@
 import express from "express";
 import BusinessSettings from "../models/BusinessSettings.js";
 import { protect, adminOnly } from "../middleware/authMiddleware.js";
+
 const router = express.Router();
 
 const defaultSettings = {
   settingsKey: "main",
   businessName: "BookFlow",
-  tagline: "Simple booking software for local businesses.",
-  phone: "(555) 555-5555",
-  email: "hello@bookflow.com",
-  address: "123 Main Street",
+  tagline: "Simple booking for modern businesses.",
+  phone: "",
+  email: "",
+  address: "",
+  openingTime: "09:00",
+  closingTime: "17:00",
+  slotInterval: 30,
+  closedDays: ["Sunday"],
+};
+
+const getSettingsDocument = async () => {
+  let settings = await BusinessSettings.findOne({ settingsKey: "main" });
+
+  if (!settings) {
+    settings = await BusinessSettings.create(defaultSettings);
+    return settings;
+  }
+
+  let changed = false;
+
+  Object.entries(defaultSettings).forEach(([key, value]) => {
+    if (settings[key] === undefined) {
+      settings[key] = value;
+      changed = true;
+    }
+  });
+
+  if (changed) {
+    await settings.save();
+  }
+
+  return settings;
 };
 
 // GET business settings
 router.get("/", async (req, res) => {
   try {
-    let settings = await BusinessSettings.findOne({ settingsKey: "main" });
-
-    if (!settings) {
-      settings = await BusinessSettings.create(defaultSettings);
-    }
+    const settings = await getSettingsDocument();
 
     res.json({
       success: true,
@@ -28,77 +53,71 @@ router.get("/", async (req, res) => {
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: "Failed to fetch business settings.",
+      message: "Failed to load settings.",
       error: error.message,
     });
   }
 });
 
-// UPDATE business settings
+// UPDATE business settings - admin only
 router.patch("/", protect, adminOnly, async (req, res) => {
   try {
-    const { businessName, tagline, phone, email, address } = req.body;
+    const settings = await getSettingsDocument();
 
-    if (!businessName || !tagline || !phone || !email || !address) {
-      return res.status(400).json({
-        success: false,
-        message: "Please provide all business settings fields.",
-      });
+    const allowedFields = [
+      "businessName",
+      "tagline",
+      "phone",
+      "email",
+      "address",
+      "openingTime",
+      "closingTime",
+      "slotInterval",
+      "closedDays",
+    ];
+
+    allowedFields.forEach((field) => {
+      if (req.body[field] !== undefined) {
+        settings[field] = req.body[field];
+      }
+    });
+
+    if (settings.slotInterval) {
+      settings.slotInterval = Number(settings.slotInterval);
     }
 
-    const settings = await BusinessSettings.findOneAndUpdate(
-      { settingsKey: "main" },
-      {
-        settingsKey: "main",
-        businessName,
-        tagline,
-        phone,
-        email,
-        address,
-      },
-      {
-        new: true,
-        upsert: true,
-        runValidators: true,
-      },
-    );
+    await settings.save();
 
     res.json({
       success: true,
-      message: "Business settings updated.",
+      message: "Settings updated successfully.",
       settings,
     });
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: "Failed to update business settings.",
+      message: "Failed to update settings.",
       error: error.message,
     });
   }
 });
 
-// RESET business settings
+// RESET business settings - admin only
 router.post("/reset", protect, adminOnly, async (req, res) => {
   try {
-    const settings = await BusinessSettings.findOneAndUpdate(
-      { settingsKey: "main" },
-      defaultSettings,
-      {
-        new: true,
-        upsert: true,
-        runValidators: true,
-      },
-    );
+    await BusinessSettings.deleteOne({ settingsKey: "main" });
+
+    const settings = await BusinessSettings.create(defaultSettings);
 
     res.json({
       success: true,
-      message: "Business settings reset.",
+      message: "Settings reset successfully.",
       settings,
     });
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: "Failed to reset business settings.",
+      message: "Failed to reset settings.",
       error: error.message,
     });
   }
