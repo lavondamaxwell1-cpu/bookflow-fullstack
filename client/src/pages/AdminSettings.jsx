@@ -1,265 +1,377 @@
 import { useState } from "react";
-import { Building2, RotateCcw, Save } from "lucide-react";
-import PageShell from "../components/PageShell";
+import { RefreshCcw, Save } from "lucide-react";
 import { useBusinessSettings } from "../hooks/useBusinessSettings";
 
-function AdminSettings() {
-  const {
-    settings,
-    settingsLoading,
-    settingsError,
-    updateSettings,
-    resetSettings,
-  } = useBusinessSettings();
+const dayOptions = [
+  "Sunday",
+  "Monday",
+  "Tuesday",
+  "Wednesday",
+  "Thursday",
+  "Friday",
+  "Saturday",
+];
 
-  if (settingsLoading) {
-    return (
-      <PageShell title="Business Settings" subtitle="Loading settings...">
-        <div className="rounded-[2rem] border border-slate-200 bg-white p-8 text-center shadow-lg">
-          <p className="font-bold text-slate-700">
-            Loading business settings...
-          </p>
-        </div>
-      </PageShell>
-    );
-  }
+const defaultForm = {
+  businessName: "BookFlow",
+  tagline: "Simple booking for modern businesses.",
+  phone: "",
+  email: "",
+  address: "",
+  openingTime: "09:00",
+  closingTime: "17:00",
+  slotInterval: 30,
+  closedDays: ["Sunday"],
+};
 
-  if (settingsError) {
-    return (
-      <PageShell title="Business Settings" subtitle="Something went wrong.">
-        <div className="rounded-[2rem] border border-red-200 bg-red-50 p-8 text-center shadow-lg">
-          <p className="font-bold text-red-700">{settingsError}</p>
-        </div>
-      </PageShell>
-    );
-  }
-
-  return (
-    <SettingsForm
-      key={settings.updatedAt || settings.businessName}
-      initialSettings={settings}
-      updateSettings={updateSettings}
-      resetSettings={resetSettings}
-    />
-  );
-}
-
-function SettingsForm({ initialSettings, updateSettings, resetSettings }) {
-  const [formData, setFormData] = useState({
-    businessName: initialSettings.businessName || "",
-    tagline: initialSettings.tagline || "",
-    phone: initialSettings.phone || "",
-    email: initialSettings.email || "",
-    address: initialSettings.address || "",
+function SettingsForm({ initialSettings, onSave, onReset }) {
+  const [form, setForm] = useState({
+    ...defaultForm,
+    ...initialSettings,
+    closedDays: initialSettings?.closedDays || ["Sunday"],
   });
 
-  const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
+  const [resetting, setResetting] = useState(false);
+  const [message, setMessage] = useState("");
+  const [formError, setFormError] = useState("");
 
-  const handleChange = (e) => {
-    const { name, value } = e.target;
+  const handleChange = (event) => {
+    const { name, value } = event.target;
 
-    setFormData((prev) => ({
+    setMessage("");
+    setFormError("");
+
+    setForm((prev) => ({
       ...prev,
-      [name]: value,
+      [name]: name === "slotInterval" ? Number(value) : value,
     }));
   };
 
-  const handleSave = async (e) => {
-    e.preventDefault();
-
-    setSaving(true);
+  const toggleClosedDay = (day) => {
     setMessage("");
+    setFormError("");
 
-    const result = await updateSettings(formData);
+    setForm((prev) => {
+      const alreadyClosed = prev.closedDays.includes(day);
 
-    if (!result.success) {
-      setMessage(result.message);
-      setSaving(false);
+      return {
+        ...prev,
+        closedDays: alreadyClosed
+          ? prev.closedDays.filter((item) => item !== day)
+          : [...prev.closedDays, day],
+      };
+    });
+  };
+
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+
+    if (form.openingTime >= form.closingTime) {
+      setFormError("Opening time must be earlier than closing time.");
       return;
     }
 
-    setMessage("Business settings saved.");
-    setSaving(false);
+    try {
+      setSaving(true);
+      setMessage("");
+      setFormError("");
+
+      await onSave(form);
+
+      setMessage("Settings saved successfully.");
+    } catch (err) {
+      setFormError(err.message || "Failed to save settings.");
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleReset = async () => {
-    const confirmReset = window.confirm(
-      "Are you sure you want to reset business settings?",
+    const confirmed = window.confirm(
+      "Reset all business settings back to the default BookFlow settings?",
     );
 
-    if (!confirmReset) return;
+    if (!confirmed) return;
 
-    setSaving(true);
-    setMessage("");
+    try {
+      setResetting(true);
+      setMessage("");
+      setFormError("");
 
-    const result = await resetSettings();
+      const resetSettings = await onReset();
 
-    if (!result.success) {
-      setMessage(result.message);
-      setSaving(false);
-      return;
+      setForm({
+        ...defaultForm,
+        ...resetSettings,
+        closedDays: resetSettings?.closedDays || ["Sunday"],
+      });
+
+      setMessage("Settings reset successfully.");
+    } catch (err) {
+      setFormError(err.message || "Failed to reset settings.");
+    } finally {
+      setResetting(false);
     }
-
-    setMessage("Business settings reset.");
-    setSaving(false);
   };
 
   return (
-    <PageShell
-      title="Business Settings"
-      subtitle="Customize this app for each client or business."
-    >
-      <div className="grid gap-6 lg:grid-cols-[420px_1fr]">
-        <div className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-lg">
-          <div className="mb-5 flex items-center gap-3">
-            <div className="rounded-2xl bg-blue-100 p-3 text-blue-700">
-              <Building2 />
-            </div>
+    <form onSubmit={handleSubmit} className="space-y-6">
+      {message && (
+        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm font-semibold text-emerald-700">
+          {message}
+        </div>
+      )}
 
-            <div>
-              <h2 className="text-xl font-black text-slate-900">
-                Business Info
-              </h2>
-              <p className="text-sm text-slate-500">
-                These details now save to MongoDB.
-              </p>
-            </div>
+      {formError && (
+        <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-700">
+          {formError}
+        </div>
+      )}
+
+      <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+        <h2 className="text-xl font-bold text-slate-900">
+          Business Information
+        </h2>
+        <p className="mt-1 text-sm text-slate-500">
+          This information appears across the public booking site.
+        </p>
+
+        <div className="mt-5 grid gap-5 md:grid-cols-2">
+          <div>
+            <label className="mb-1 block text-sm font-semibold text-slate-700">
+              Business Name
+            </label>
+            <input
+              name="businessName"
+              value={form.businessName}
+              onChange={handleChange}
+              className="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-indigo-500"
+              required
+            />
           </div>
 
-          {message && (
-            <div className="mb-5 rounded-2xl border border-blue-200 bg-blue-50 p-4 font-semibold text-blue-700">
-              {message}
-            </div>
-          )}
-
-          <form onSubmit={handleSave} className="space-y-4">
-            <TextField
-              label="Business Name"
-              name="businessName"
-              value={formData.businessName}
-              onChange={handleChange}
-              placeholder="Lavonda Beauty Studio"
-            />
-
-            <TextField
-              label="Tagline"
+          <div>
+            <label className="mb-1 block text-sm font-semibold text-slate-700">
+              Tagline
+            </label>
+            <input
               name="tagline"
-              value={formData.tagline}
+              value={form.tagline}
               onChange={handleChange}
-              placeholder="Book your appointment with ease."
+              className="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-indigo-500"
             />
+          </div>
 
-            <TextField
-              label="Phone"
+          <div>
+            <label className="mb-1 block text-sm font-semibold text-slate-700">
+              Phone
+            </label>
+            <input
               name="phone"
-              value={formData.phone}
+              value={form.phone}
               onChange={handleChange}
-              placeholder="(555) 555-5555"
+              className="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-indigo-500"
             />
+          </div>
 
-            <TextField
-              label="Email"
-              name="email"
+          <div>
+            <label className="mb-1 block text-sm font-semibold text-slate-700">
+              Email
+            </label>
+            <input
               type="email"
-              value={formData.email}
+              name="email"
+              value={form.email}
               onChange={handleChange}
-              placeholder="hello@business.com"
+              className="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-indigo-500"
             />
+          </div>
 
-            <TextField
-              label="Address"
+          <div className="md:col-span-2">
+            <label className="mb-1 block text-sm font-semibold text-slate-700">
+              Address
+            </label>
+            <input
               name="address"
-              value={formData.address}
+              value={form.address}
               onChange={handleChange}
-              placeholder="123 Main Street"
+              className="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-indigo-500"
             />
+          </div>
+        </div>
+      </section>
 
-            <button
-              type="submit"
-              disabled={saving}
-              className="flex w-full items-center justify-center gap-2 rounded-xl bg-blue-700 px-5 py-3 font-bold text-white hover:bg-blue-800 disabled:cursor-not-allowed disabled:bg-slate-300"
-            >
-              <Save size={18} />
-              {saving ? "Saving..." : "Save Settings"}
-            </button>
+      <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+        <h2 className="text-xl font-bold text-slate-900">Booking Hours</h2>
+        <p className="mt-1 text-sm text-slate-500">
+          These settings will control the customer time dropdown.
+        </p>
 
-            <button
-              type="button"
-              onClick={handleReset}
-              disabled={saving}
-              className="flex w-full items-center justify-center gap-2 rounded-xl border border-slate-300 px-5 py-3 font-bold text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+        <div className="mt-5 grid gap-5 md:grid-cols-3">
+          <div>
+            <label className="mb-1 block text-sm font-semibold text-slate-700">
+              Opening Time
+            </label>
+            <input
+              type="time"
+              name="openingTime"
+              value={form.openingTime}
+              onChange={handleChange}
+              className="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-indigo-500"
+              required
+            />
+          </div>
+
+          <div>
+            <label className="mb-1 block text-sm font-semibold text-slate-700">
+              Closing Time
+            </label>
+            <input
+              type="time"
+              name="closingTime"
+              value={form.closingTime}
+              onChange={handleChange}
+              className="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-indigo-500"
+              required
+            />
+          </div>
+
+          <div>
+            <label className="mb-1 block text-sm font-semibold text-slate-700">
+              Slot Interval
+            </label>
+            <select
+              name="slotInterval"
+              value={form.slotInterval}
+              onChange={handleChange}
+              className="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-indigo-500"
             >
-              <RotateCcw size={18} />
-              Reset Defaults
-            </button>
-          </form>
+              <option value={15}>15 minutes</option>
+              <option value={30}>30 minutes</option>
+              <option value={45}>45 minutes</option>
+              <option value={60}>60 minutes</option>
+            </select>
+          </div>
         </div>
 
-        <div className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-lg">
-          <h2 className="text-xl font-black text-slate-900">Live Preview</h2>
-          <p className="mt-1 text-sm text-slate-500">
-            This is how client branding can appear.
+        <div className="mt-6">
+          <p className="mb-3 text-sm font-semibold text-slate-700">
+            Closed Days
           </p>
 
-          <div className="mt-6 rounded-[2rem] bg-gradient-to-br from-blue-50 to-slate-100 p-6">
-            <p className="mb-3 inline-flex rounded-full bg-blue-100 px-4 py-2 text-sm font-bold text-blue-700">
-              Client Booking Portal
-            </p>
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+            {dayOptions.map((day) => {
+              const isClosed = form.closedDays.includes(day);
 
-            <h3 className="text-4xl font-black text-slate-950">
-              {formData.businessName}
-            </h3>
-
-            <p className="mt-3 max-w-xl text-lg leading-8 text-slate-600">
-              {formData.tagline}
-            </p>
-
-            <div className="mt-6 grid gap-3 text-sm font-semibold text-slate-700 sm:grid-cols-2">
-              <div className="rounded-2xl bg-white p-4">
-                <p className="text-slate-400">Phone</p>
-                <p>{formData.phone}</p>
-              </div>
-
-              <div className="rounded-2xl bg-white p-4">
-                <p className="text-slate-400">Email</p>
-                <p>{formData.email}</p>
-              </div>
-
-              <div className="rounded-2xl bg-white p-4 sm:col-span-2">
-                <p className="text-slate-400">Address</p>
-                <p>{formData.address}</p>
-              </div>
-            </div>
+              return (
+                <button
+                  key={day}
+                  type="button"
+                  onClick={() => toggleClosedDay(day)}
+                  className={`rounded-2xl border px-4 py-3 text-sm font-bold transition ${
+                    isClosed
+                      ? "border-red-200 bg-red-50 text-red-700"
+                      : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                  }`}
+                >
+                  {day}
+                  <span className="ml-2 text-xs">
+                    {isClosed ? "Closed" : "Open"}
+                  </span>
+                </button>
+              );
+            })}
           </div>
         </div>
+      </section>
+
+      <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+        <button
+          type="button"
+          onClick={handleReset}
+          disabled={resetting || saving}
+          className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-200 px-5 py-3 font-bold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          <RefreshCcw className="h-4 w-4" />
+          {resetting ? "Resetting..." : "Reset Defaults"}
+        </button>
+
+        <button
+          type="submit"
+          disabled={saving || resetting}
+          className="inline-flex items-center justify-center gap-2 rounded-2xl bg-indigo-600 px-5 py-3 font-bold text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          <Save className="h-4 w-4" />
+          {saving ? "Saving..." : "Save Settings"}
+        </button>
       </div>
-    </PageShell>
+    </form>
   );
 }
 
-function TextField({
-  label,
-  name,
-  value,
-  onChange,
-  placeholder,
-  type = "text",
-}) {
+export default function AdminSettings() {
+  const settingsContext = useBusinessSettings();
+
+  const settings = settingsContext.settings;
+  const loading = settingsContext.loading ?? settingsContext.settingsLoading;
+  const error = settingsContext.error ?? settingsContext.settingsError;
+
+  const saveSettings =
+    settingsContext.updateSettings || settingsContext.updateBusinessSettings;
+
+  const resetSettings =
+    settingsContext.resetSettings || settingsContext.resetBusinessSettings;
+
+  if (loading) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <p className="text-sm font-semibold uppercase tracking-wide text-indigo-600">
+            Admin
+          </p>
+          <h1 className="text-3xl font-bold text-slate-900">Settings</h1>
+        </div>
+
+        <div className="rounded-3xl border border-slate-200 bg-white p-8 text-center text-slate-500">
+          Loading settings...
+        </div>
+      </div>
+    );
+  }
+
+  if (!saveSettings || !resetSettings) {
+    return (
+      <div className="rounded-3xl border border-red-200 bg-red-50 p-6 text-red-700">
+        Settings actions are missing from BusinessSettingsProvider.
+      </div>
+    );
+  }
+
   return (
-    <div>
-      <label className="mb-2 block font-bold text-slate-800">{label}</label>
-      <input
-        name={name}
-        type={type}
-        value={value}
-        onChange={onChange}
-        placeholder={placeholder}
-        required
-        className="w-full rounded-xl border border-slate-300 px-4 py-3 outline-none focus:border-blue-700"
+    <div className="space-y-6">
+      <div>
+        <p className="text-sm font-semibold uppercase tracking-wide text-indigo-600">
+          Admin
+        </p>
+        <h1 className="text-3xl font-bold text-slate-900">Settings</h1>
+        <p className="mt-1 text-slate-600">
+          Manage business details, booking hours, and closed days.
+        </p>
+      </div>
+
+      {error && (
+        <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-700">
+          {error}
+        </div>
+      )}
+
+      <SettingsForm
+        key={settings?._id || settings?.updatedAt || "settings-form"}
+        initialSettings={settings}
+        onSave={saveSettings}
+        onReset={resetSettings}
       />
     </div>
   );
 }
-
-export default AdminSettings;
