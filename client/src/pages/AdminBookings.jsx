@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Edit, Search, Trash2 } from "lucide-react";
+import { Download, Edit, Search, Trash2 } from "lucide-react";
 import { useBookings } from "../hooks/useBookings";
 import { useServices } from "../hooks/useServices";
 
@@ -162,6 +162,57 @@ export default function AdminBookings() {
     return "bg-amber-100 text-amber-700";
   };
 
+const downloadBookingsCSV = () => {
+  const escapeCSV = (value) => {
+    const stringValue = String(value ?? "");
+    return `"${stringValue.replaceAll('"', '""')}"`;
+  };
+
+  const headers = [
+    "Customer Name",
+    "Email",
+    "Phone",
+    "Service",
+    "Date",
+    "Time",
+    "Status",
+    "Notes",
+  ];
+
+  const rows = filteredBookings.map((booking) => [
+    booking.customerName,
+    booking.email,
+    booking.phone,
+    booking.service,
+    booking.date,
+    booking.time,
+    booking.status,
+    booking.notes || "",
+  ]);
+
+  const csvContent = [headers, ...rows]
+    .map((row) => row.map(escapeCSV).join(","))
+    .join("\n");
+
+  const blob = new Blob([csvContent], {
+    type: "text/csv;charset=utf-8;",
+  });
+
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+
+  link.href = url;
+  link.download = `bookflow-bookings-${new Date()
+    .toISOString()
+    .slice(0, 10)}.csv`;
+
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+
+  URL.revokeObjectURL(url);
+};
+
   return (
     <div className="space-y-6">
       <div>
@@ -215,7 +266,17 @@ export default function AdminBookings() {
           <option value="date">Appointment Date</option>
         </select>
       </div>
-
+      <div className="flex justify-end">
+        <button
+          type="button"
+          onClick={downloadBookingsCSV}
+          disabled={filteredBookings.length === 0}
+          className="inline-flex items-center gap-2 rounded-2xl bg-slate-900 px-4 py-3 text-sm font-bold text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <Download className="h-4 w-4" />
+          Download CSV
+        </button>
+      </div>
       {loading ? (
         <div className="rounded-3xl border border-slate-200 bg-white p-8 text-center text-slate-500">
           Loading bookings...

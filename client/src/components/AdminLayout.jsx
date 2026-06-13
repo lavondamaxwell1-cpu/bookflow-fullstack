@@ -2,11 +2,11 @@ import { NavLink, Outlet } from "react-router-dom";
 import {
   BarChart3,
   CalendarCheck,
+  PieChart,
   Settings,
   SlidersHorizontal,
   Users,
 } from "lucide-react";
-
 function AdminLayout() {
   const linkClass = ({ isActive }) =>
     isActive
@@ -42,6 +42,12 @@ function AdminLayout() {
             <Users size={20} />
             <span>Customers</span>
           </NavLink>
+
+          <NavLink to="/admin/reports" className={linkClass}>
+            <PieChart size={20} />
+            <span>Reports</span>
+          </NavLink>
+
           <NavLink to="/admin/settings" className={linkClass}>
             <Settings size={20} />
             <span>Settings</span>

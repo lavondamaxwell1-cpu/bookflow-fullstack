@@ -20,7 +20,7 @@ import AuthProvider from "./context/AuthProvider";
 import ProtectedRoute from "./components/ProtectedRoute";
 import Profile from "./pages/Profile";
 import AdminCustomers from "./pages/AdminCustomers";
-
+import AdminReports from "./pages/AdminReports";
 
 function App() {
   return (
@@ -50,6 +50,7 @@ function App() {
                   <Route path="services" element={<AdminServices />} />
                   <Route path="settings" element={<AdminSettings />} />
                   <Route path="customers" element={<AdminCustomers />} />
+                  <Route path="reports" element={<AdminReports />} />
                 </Route>
 
                 <Route path="/login" element={<Login />} />
