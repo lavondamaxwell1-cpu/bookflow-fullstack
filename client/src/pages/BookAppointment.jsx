@@ -3,30 +3,69 @@ import { CalendarCheck, Clock, RefreshCcw } from "lucide-react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
 import { useBookings } from "../hooks/useBookings";
+import { useBusinessSettings } from "../hooks/useBusinessSettings";
 import { useServices } from "../hooks/useServices";
 
-const timeSlots = [
-  { label: "9:00 AM", value: "09:00" },
-  { label: "9:30 AM", value: "09:30" },
-  { label: "10:00 AM", value: "10:00" },
-  { label: "10:30 AM", value: "10:30" },
-  { label: "11:00 AM", value: "11:00" },
-  { label: "11:30 AM", value: "11:30" },
-  { label: "12:00 PM", value: "12:00" },
-  { label: "12:30 PM", value: "12:30" },
-  { label: "1:00 PM", value: "13:00" },
-  { label: "1:30 PM", value: "13:30" },
-  { label: "2:00 PM", value: "14:00" },
-  { label: "2:30 PM", value: "14:30" },
-  { label: "3:00 PM", value: "15:00" },
-  { label: "3:30 PM", value: "15:30" },
-  { label: "4:00 PM", value: "16:00" },
-  { label: "4:30 PM", value: "16:30" },
-  { label: "5:00 PM", value: "17:00" },
+const dayNames = [
+  "Sunday",
+  "Monday",
+  "Tuesday",
+  "Wednesday",
+  "Thursday",
+  "Friday",
+  "Saturday",
 ];
 
 const getToday = () => {
   return new Date().toISOString().split("T")[0];
+};
+
+const timeToMinutes = (time) => {
+  const [hours, minutes] = String(time || "00:00")
+    .split(":")
+    .map(Number);
+
+  return hours * 60 + minutes;
+};
+
+const minutesToTime = (totalMinutes) => {
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+
+  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(
+    2,
+    "0",
+  )}`;
+};
+
+const formatTimeLabel = (time) => {
+  const [hourString, minuteString] = time.split(":");
+  const hourNumber = Number(hourString);
+  const suffix = hourNumber >= 12 ? "PM" : "AM";
+  const displayHour = hourNumber % 12 || 12;
+
+  return `${displayHour}:${minuteString} ${suffix}`;
+};
+
+const generateTimeSlots = ({ openingTime, closingTime, slotInterval }) => {
+  const start = timeToMinutes(openingTime || "09:00");
+  const end = timeToMinutes(closingTime || "17:00");
+  const interval = Number(slotInterval || 30);
+
+  if (start >= end || interval <= 0) return [];
+
+  const slots = [];
+
+  for (let current = start; current <= end; current += interval) {
+    const value = minutesToTime(current);
+
+    slots.push({
+      label: formatTimeLabel(value),
+      value,
+    });
+  }
+
+  return slots;
 };
 
 export default function BookAppointment() {
@@ -35,6 +74,7 @@ export default function BookAppointment() {
 
   const { user, isLoggedIn } = useAuth();
   const { bookings, addBooking, fetchBookings } = useBookings();
+  const { settings } = useBusinessSettings();
   const { services } = useServices();
 
   const [form, setForm] = useState({
@@ -51,6 +91,37 @@ export default function BookAppointment() {
   const [errorMessage, setErrorMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+
+  const businessHours = {
+    openingTime: settings?.openingTime || "09:00",
+    closingTime: settings?.closingTime || "17:00",
+    slotInterval: settings?.slotInterval || 30,
+    closedDays: settings?.closedDays || ["Sunday"],
+  };
+
+  const timeSlots = useMemo(() => {
+    return generateTimeSlots(businessHours);
+  }, [
+    businessHours.openingTime,
+    businessHours.closingTime,
+    businessHours.slotInterval,
+  ]);
+
+  const selectedDayName = useMemo(() => {
+    if (!form.date) return "";
+
+    const selectedDate = new Date(`${form.date}T00:00:00`);
+
+    if (Number.isNaN(selectedDate.getTime())) return "";
+
+    return dayNames[selectedDate.getDay()];
+  }, [form.date]);
+
+  const isSelectedDateClosed = useMemo(() => {
+    if (!selectedDayName) return false;
+
+    return businessHours.closedDays.includes(selectedDayName);
+  }, [businessHours.closedDays, selectedDayName]);
 
   const activeServices = useMemo(() => {
     return services.filter((service) => service.active !== false);
@@ -73,10 +144,12 @@ export default function BookAppointment() {
   }, [bookings, form.date]);
 
   const availableTimeSlots = useMemo(() => {
+    if (isSelectedDateClosed) return [];
+
     return timeSlots.filter(
       (slot) => !bookedTimesForSelectedDate.has(slot.value),
     );
-  }, [bookedTimesForSelectedDate]);
+  }, [bookedTimesForSelectedDate, isSelectedDateClosed, timeSlots]);
 
   const selectedService = useMemo(() => {
     return activeServices.find((service) => service.name === form.service);
@@ -117,6 +190,13 @@ export default function BookAppointment() {
 
     if (!form.service || !form.date || !form.time) {
       setErrorMessage("Please choose a service, date, and available time.");
+      return;
+    }
+
+    if (isSelectedDateClosed) {
+      setErrorMessage(
+        `Sorry, this business is closed on ${selectedDayName}. Please choose another date.`,
+      );
       return;
     }
 
@@ -182,6 +262,13 @@ export default function BookAppointment() {
           {errorMessage && (
             <div className="mb-6 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-700">
               {errorMessage}
+            </div>
+          )}
+
+          {form.date && isSelectedDateClosed && (
+            <div className="mb-6 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm font-semibold text-amber-800">
+              This business is closed on {selectedDayName}. Please choose
+              another date.
             </div>
           )}
 
@@ -289,19 +376,31 @@ export default function BookAppointment() {
                   name="time"
                   value={form.time}
                   onChange={handleChange}
-                  disabled={!form.date || availableTimeSlots.length === 0}
+                  disabled={
+                    !form.date ||
+                    isSelectedDateClosed ||
+                    availableTimeSlots.length === 0
+                  }
                   className="w-full rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-indigo-500 disabled:bg-slate-100 disabled:text-slate-400"
                   required
                 >
                   {!form.date && <option value="">Choose a date first</option>}
 
-                  {form.date && availableTimeSlots.length === 0 && (
-                    <option value="">No open times for this date</option>
+                  {form.date && isSelectedDateClosed && (
+                    <option value="">Closed on {selectedDayName}</option>
                   )}
 
-                  {form.date && availableTimeSlots.length > 0 && (
-                    <option value="">Select available time</option>
-                  )}
+                  {form.date &&
+                    !isSelectedDateClosed &&
+                    availableTimeSlots.length === 0 && (
+                      <option value="">No open times for this date</option>
+                    )}
+
+                  {form.date &&
+                    !isSelectedDateClosed &&
+                    availableTimeSlots.length > 0 && (
+                      <option value="">Select available time</option>
+                    )}
 
                   {availableTimeSlots.map((slot) => (
                     <option key={slot.value} value={slot.value}>
@@ -310,13 +409,23 @@ export default function BookAppointment() {
                   ))}
                 </select>
 
-                {form.date && bookedTimesForSelectedDate.size > 0 && (
+                {form.date && !isSelectedDateClosed && (
                   <p className="mt-2 text-xs text-slate-500">
-                    {bookedTimesForSelectedDate.size} time slot
-                    {bookedTimesForSelectedDate.size === 1 ? "" : "s"} already
-                    booked on this date.
+                    Hours: {formatTimeLabel(businessHours.openingTime)} -{" "}
+                    {formatTimeLabel(businessHours.closingTime)} · Every{" "}
+                    {businessHours.slotInterval} minutes
                   </p>
                 )}
+
+                {form.date &&
+                  !isSelectedDateClosed &&
+                  bookedTimesForSelectedDate.size > 0 && (
+                    <p className="mt-1 text-xs text-slate-500">
+                      {bookedTimesForSelectedDate.size} time slot
+                      {bookedTimesForSelectedDate.size === 1 ? "" : "s"} already
+                      booked on this date.
+                    </p>
+                  )}
               </div>
 
               <div className="md:col-span-2">
@@ -336,7 +445,7 @@ export default function BookAppointment() {
 
             <button
               type="submit"
-              disabled={submitting}
+              disabled={submitting || isSelectedDateClosed}
               className="rounded-2xl bg-indigo-600 px-5 py-3 font-bold text-white shadow-sm hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {submitting ? "Sending Request..." : "Request Booking"}
@@ -374,6 +483,20 @@ export default function BookAppointment() {
                 </p>
               </div>
 
+              <div>
+                <p className="text-slate-400">Business Hours</p>
+                <p className="font-semibold">
+                  {formatTimeLabel(businessHours.openingTime)} -{" "}
+                  {formatTimeLabel(businessHours.closingTime)}
+                </p>
+                <p className="text-slate-300">
+                  Closed:{" "}
+                  {businessHours.closedDays.length > 0
+                    ? businessHours.closedDays.join(", ")
+                    : "No closed days"}
+                </p>
+              </div>
+
               {selectedService && (
                 <div className="rounded-2xl bg-white/10 p-4">
                   <p className="font-semibold">{selectedService.name}</p>
@@ -391,11 +514,11 @@ export default function BookAppointment() {
           <div className="rounded-3xl border border-indigo-100 bg-indigo-50 p-6">
             <Clock className="mb-3 h-8 w-8 text-indigo-600" />
             <h3 className="text-lg font-bold text-slate-900">
-              Real-time availability
+              Smart availability
             </h3>
             <p className="mt-2 text-sm text-slate-600">
-              Pending and confirmed bookings automatically block those time
-              slots so customers do not double-book.
+              Time slots now come from Admin Settings, and pending/confirmed
+              bookings automatically block unavailable times.
             </p>
           </div>
         </aside>

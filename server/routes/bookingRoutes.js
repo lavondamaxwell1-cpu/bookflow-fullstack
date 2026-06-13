@@ -9,12 +9,58 @@ import {
 } from "../utils/emailTemplates.js";
 
 const router = express.Router();
-const getBusinessName = async () => {
-  const settings = await BusinessSettings.findOne({ settingsKey: "main" });
+// const getBusinessName = async () => {
+//   const settings = await BusinessSettings.findOne({ settingsKey: "main" });
 
-  return settings?.businessName || "BookFlow";
+//   return settings?.businessName || "BookFlow";
+// };
+const dayNames = [
+  "Sunday",
+  "Monday",
+  "Tuesday",
+  "Wednesday",
+  "Thursday",
+  "Friday",
+  "Saturday",
+];
+
+const timeToMinutes = (time) => {
+  const [hours, minutes] = String(time || "00:00")
+    .split(":")
+    .map(Number);
+
+  return hours * 60 + minutes;
 };
 
+const isValidBookingTime = ({
+  time,
+  openingTime,
+  closingTime,
+  slotInterval,
+}) => {
+  const bookingMinutes = timeToMinutes(time);
+  const openingMinutes = timeToMinutes(openingTime);
+  const closingMinutes = timeToMinutes(closingTime);
+  const interval = Number(slotInterval || 30);
+
+  if (bookingMinutes < openingMinutes || bookingMinutes > closingMinutes) {
+    return false;
+  }
+
+  return (bookingMinutes - openingMinutes) % interval === 0;
+};
+
+const getBusinessSettings = async () => {
+  const settings = await BusinessSettings.findOne({ settingsKey: "main" });
+
+  return {
+    businessName: settings?.businessName || "BookFlow",
+    openingTime: settings?.openingTime || "09:00",
+    closingTime: settings?.closingTime || "17:00",
+    slotInterval: settings?.slotInterval || 30,
+    closedDays: settings?.closedDays || ["Sunday"],
+  };
+};
 // GET all bookings
 router.get("/", async (req, res) => {
   try {
@@ -45,6 +91,32 @@ router.post("/", async (req, res) => {
         message: "Please provide all required booking fields.",
       });
     }
+
+    const businessSettings = await getBusinessSettings();
+
+    const selectedDate = new Date(`${date}T00:00:00`);
+    const selectedDayName = dayNames[selectedDate.getDay()];
+
+    if (businessSettings.closedDays.includes(selectedDayName)) {
+      return res.status(400).json({
+        success: false,
+        message: `This business is closed on ${selectedDayName}. Please choose another date.`,
+      });
+    }
+
+    const validTime = isValidBookingTime({
+      time,
+      openingTime: businessSettings.openingTime,
+      closingTime: businessSettings.closingTime,
+      slotInterval: businessSettings.slotInterval,
+    });
+
+    if (!validTime) {
+      return res.status(400).json({
+        success: false,
+        message: `Please choose a valid time between ${businessSettings.openingTime} and ${businessSettings.closingTime}.`,
+      });
+    }
 const existingBooking = await Booking.findOne({
   date,
   time,
@@ -71,8 +143,7 @@ const booking = await Booking.create({
   notes,
 });
 
-    const businessName = await getBusinessName();
-
+  const businessName = businessSettings.businessName;
     await sendEmail({
       to: booking.email,
       subject: `Booking request received - ${businessName}`,
@@ -228,7 +299,31 @@ router.patch("/:id", protect, adminOnly, async (req, res) => {
 
     const newDate = date || currentBooking.date;
     const newTime = time || currentBooking.time;
+const businessSettings = await getBusinessSettings();
 
+const selectedDate = new Date(`${newDate}T00:00:00`);
+const selectedDayName = dayNames[selectedDate.getDay()];
+
+if (businessSettings.closedDays.includes(selectedDayName)) {
+  return res.status(400).json({
+    success: false,
+    message: `This business is closed on ${selectedDayName}. Please choose another date.`,
+  });
+}
+
+const validTime = isValidBookingTime({
+  time: newTime,
+  openingTime: businessSettings.openingTime,
+  closingTime: businessSettings.closingTime,
+  slotInterval: businessSettings.slotInterval,
+});
+
+if (!validTime) {
+  return res.status(400).json({
+    success: false,
+    message: `Please choose a valid time between ${businessSettings.openingTime} and ${businessSettings.closingTime}.`,
+  });
+}
     const existingBooking = await Booking.findOne({
       _id: { $ne: req.params.id },
       date: newDate,
